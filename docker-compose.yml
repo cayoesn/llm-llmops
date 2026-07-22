@@ -1,17 +1,70 @@
 version: '3.8'
 
 services:
+  llmops-postgres:
+    image: postgres:15-alpine
+    container_name: llmops_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: llmopspassword
+      POSTGRES_DB: llmops_db
+    ports:
+      - "5439:5432"
+    volumes:
+      - llmops_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - llmops_network
+
+  llmops-langfuse:
+    image: langfuse/langfuse:2
+    container_name: llmops_langfuse
+    depends_on:
+      llmops-postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://postgres:llmopspassword@llmops-postgres:5432/llmops_db
+      - NEXTAUTH_SECRET=llmopssecret
+      - NEXTAUTH_URL=http://localhost:3008
+      - SALT=llmopssalt
+      - ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+      - TELEMETRY_ENABLED=false
+      - LANGFUSE_INIT_USER_EMAIL=admin@llmops.com
+      - LANGFUSE_INIT_USER_PASSWORD=adminpassword123
+      - LANGFUSE_INIT_ORG_ID=llmops-org
+      - LANGFUSE_INIT_ORG_NAME=LLMOps Org
+      - LANGFUSE_INIT_PROJECT_ID=llmops-project
+      - LANGFUSE_INIT_PROJECT_NAME=LLMOps Project
+      - LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-llmops
+      - LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-llmops
+      - LANGFUSE_DISABLE_SIGNUP=true
+    ports:
+      - "3008:3000"
+    networks:
+      - llmops_network
+
   llmops-gateway:
     build: .
+    container_name: llmops_gateway_app
     ports:
       - "8000:8000"
     environment:
       - ENV=production
-      - LANGFUSE_PUBLIC_KEY=pk-lf-demo
-      - LANGFUSE_SECRET_KEY=sk-lf-demo
-      - LANGFUSE_HOST=http://localhost:3000
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+      - LANGFUSE_PUBLIC_KEY=pk-lf-llmops
+      - LANGFUSE_SECRET_KEY=sk-lf-llmops
+      - LANGFUSE_HOST=http://llmops-langfuse:3000
+    depends_on:
+      - llmops-langfuse
+    networks:
+      - llmops_network
+
+networks:
+  llmops_network:
+    driver: bridge
+
+volumes:
+  llmops_postgres_data:
