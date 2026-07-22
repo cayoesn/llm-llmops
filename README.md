@@ -75,3 +75,39 @@ docker run --rm -e PYTHONPATH=/app -v $(pwd):/app -w /app python:3.12-slim bash 
 
 ## 🛡️ Licença & Autor
 Desenvolvido por **Cayo Neves** ([@cayoesn](https://github.com/cayoesn)) como o projeto final e consolidado do Portfólio de LLM & LLMOps de Alta Performance.
+
+
+---
+
+## 🚀 Execução em Container Isolado (100% Autônomo)
+
+Este repositório é **100% independente e autônomo**. Ele não depende de nenhum outro projeto do ecossistema para ser executado, testado ou analisado.
+
+### 🛠️ Componentes Inclusos na Stack Docker Exclusiva:
+- `llmops_gateway_app`: API Gateway Unificado FastAPI de Referência Industrial.
+- `llmops_postgres`: Banco de dados PostgreSQL dedicado (porta 5439).
+- `llmops_langfuse`: Servidor de observabilidade Langfuse self-hosted pré-inicializado.
+
+### 📦 Como Executar:
+
+1. **Subir toda a pilha isolada**:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+2. **Endpoints & Endereços de Acesso**:
+   - **Serviço da Aplicação**: `http://localhost:8000` (Documentação interativa OpenAPI em `/docs` se aplicável)
+   - **Painel de Observabilidade (Langfuse)**: `http://localhost:3008`
+   - **Credenciais Automáticas do Langfuse**:
+     - Email: `admin@llmllmops.com`
+     - Senha: `adminpassword123`
+
+3. **Execução de Testes Automatizados em Container**:
+   ```bash
+   make test
+   ```
+
+4. **Encerrar a pilha**:
+   ```bash
+   docker-compose down -v
+   ```
