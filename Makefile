@@ -1,25 +1,17 @@
-.PHONY: install run test lint coverage docker-up docker-down docker-logs
-
-install:
-	poetry install
+.PHONY: run test docker-build docker-run clean
 
 run:
-	poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+	uvicorn app.gateway:app --reload --port 8000
 
 test:
-	poetry run pytest
+	pytest --cov=app --cov-report=term-missing
 
-lint:
-	poetry run ruff check app tests
+docker-build:
+	docker build -t llm-llmops .
 
-coverage:
-	poetry run pytest --cov=app tests/
+docker-run:
+	docker-compose up --build
 
-docker-up:
-	docker compose up --build -d
-
-docker-down:
-	docker compose down
-
-docker-logs:
-	docker compose logs -f
+clean:
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d -name ".pytest_cache" -exec rm -rf {} +
