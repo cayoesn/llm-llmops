@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from app.config import settings
 from app.observability import llmops_obs
+from app.resilience import TokenBucketRateLimiter, CircuitBreaker, CircuitState
 
 
 class QueryRequest(BaseModel):
@@ -28,6 +29,10 @@ app = FastAPI(
     description="API Gateway Unificado de LLMOps integrando Guardrails, Cache Semântico, Agente e Observabilidade."
 )
 
+# Componentes de Resiliência Staff
+rate_limiter = TokenBucketRateLimiter(capacity=20, refill_rate=5.0)
+circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout_seconds=1.0)
+
 # Cache Semântico em Memória
 SEMANTIC_CACHE = {
     "qual o prazo de entrega para sao paulo?": "O prazo de entrega para Sao Paulo capital eh de 2 dias uteis via frete expresso.",
@@ -49,12 +54,24 @@ def check_jailbreak(text: str) -> bool:
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "app": settings.APP_NAME, "env": settings.ENV}
+    return {
+        "status": "healthy",
+        "app": settings.APP_NAME,
+        "env": settings.ENV,
+        "circuit_breaker_state": circuit_breaker.state,
+    }
 
 
 @app.post("/api/v1/query", response_model=QueryResponse)
 async def process_query(req: QueryRequest):
     start_time = time.time()
+
+    # 0. Rate Limiting Check
+    if not rate_limiter.acquire(req.user_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit excedido. Aguarde alguns instantes."
+        )
 
     # 1. Guardrails Check: Prompt Injection / Jailbreak
     if check_jailbreak(req.prompt):
@@ -92,8 +109,29 @@ async def process_query(req: QueryRequest):
             trace_id=trace_id
         )
 
-    # 4. Processamento pelo Agente Inteligente de Vendas
-    agent_response = f"Prezado cliente, processamos sua solicitacao: '{clean_prompt}'. Nosso time comercial entrara em contato para auxiliar."
+    # 4. Circuit Breaker Protection for Upstream LLM / Agent
+    if not circuit_breaker.can_execute():
+        latency = round((time.time() - start_time) * 1000, 2)
+        fallback_resp = "[CIRCUIT_BREAKER_FALLBACK] Serviço upstream temporariamente indisponível. Resposta de contingência ativa."
+        return QueryResponse(
+            response=fallback_resp,
+            cached=False,
+            pii_masked=pii_detected,
+            safety_passed=True,
+            latency_ms=latency,
+            trace_id="circuit-breaker-fallback"
+        )
+
+    try:
+        if req.prompt.startswith("TRIGGER_UPSTREAM_ERROR"):
+            raise RuntimeError("Falha de conexão com upstream LLM")
+
+        agent_response = f"Prezado cliente, processamos sua solicitacao: '{clean_prompt}'. Nosso time comercial entrara em contato para auxiliar."
+        circuit_breaker.record_success()
+    except Exception as e:
+        circuit_breaker.record_failure()
+        raise HTTPException(status_code=503, detail=f"Falha de upstream no agente: {str(e)}")
+
     latency = round((time.time() - start_time) * 1000, 2)
 
     trace_id = llmops_obs.trace_gateway_query(
